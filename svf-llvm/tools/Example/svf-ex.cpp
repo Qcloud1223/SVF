@@ -236,10 +236,30 @@ void singleLayerVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited)
     }
 }
 
+void checkInterestedVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited, Set<NodeID> *interestedPtrs)
+{
+    for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
+    {
+        const VFGNode* node = *it;
+        /* For any load, if their source operand falls into interested set */
+        if (const LoadVFGNode *ln = SVFUtil::dyn_cast<LoadVFGNode>(node)) {
+            if (interestedPtrs->find(ln->getPAGSrcNodeID()) != interestedPtrs->end()) {
+                SVFUtil::outs() << "Loading from " << ln->getPAGSrcNodeID() << ", location: " << ln->getValue()->getSourceLoc() << "\n";
+            }
+        } 
+        /* For any store, if their destination operand falls into interested set */
+        else if (const StoreVFGNode *svn = SVFUtil::dyn_cast<StoreVFGNode>(node)) {
+            if (interestedPtrs->find(svn->getPAGDstNodeID()) != interestedPtrs->end()) {
+                SVFUtil::outs() << "Storing to " << svn->getPAGDstNodeID() << ", location: " << svn->getValue()->getSourceLoc() << "\n";
+            }
+        }
+    }
+}
+
 /*!
  * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
  */
-void traverseOnVFG(const SVFG* vfg, const SVFValue* val)
+void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interestedPtrs = nullptr)
 {
     SVFIR* pag = SVFIR::getPAG();
 
@@ -270,7 +290,8 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val)
         }
     }
 
-    singleLayerVFGCallback(vfg, visited);
+    // singleLayerVFGCallback(vfg, visited);
+    checkInterestedVFGCallback(vfg, visited, interestedPtrs);
 }
 
 void getGlobalObject(std::vector<NodeID> &glbs)
@@ -308,6 +329,27 @@ void getGlobalRevPts(PointerAnalysis* pta, std::vector<NodeID> &glbs)
         }
         SVFUtil::outs() << "\n";
     }
+}
+
+void prepareInterestedPts(PointerAnalysis *pta, std::vector<NodeID> &glbs, Set<NodeID> &ipts)
+{
+    /* struct.bc */
+    /* struct.a */
+    // ipts = pta->getRevPts(glbs[2]); 
+    /* struct.b */
+    // ipts = pta->getRevPts(glbs[3]);
+    /* struct.c */
+    // ipts = pta->getRevPts(glbs[4]);
+
+    /* multi-ptr.bc */
+    /* glb */
+    // ipts = pta->getRevPts(glbs[1]);
+    /* glb2 */
+    // ipts = pta->getRevPts(glbs[3]);
+
+    /* multi-layer-dep.bc */
+    /* glb */
+    ipts = pta->getRevPts(glbs[1]);
 }
 
 int main(int argc, char ** argv)
@@ -356,7 +398,11 @@ int main(int argc, char ** argv)
     /// Collect uses of an LLVM Value
     std::vector<NodeID> globals;
     getGlobalObject(globals);
-    traverseOnVFG(svfg, pag->getGNode(globals[0])->getValue());
+
+    /* TODO: check if this copy is bad */
+    Set<NodeID> interestedPtrs;
+    prepareInterestedPts(ander, globals, interestedPtrs);
+    traverseOnVFG(svfg, pag->getGNode(globals[0])->getValue(), &interestedPtrs);
     // getGlobalRevPts(ander, globals);
 
     // SVFUtil::outs() << printPts(ander, globals[2]);
