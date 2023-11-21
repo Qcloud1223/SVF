@@ -277,6 +277,7 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
     worklist.push(vNode);
 
     /// Traverse along VFG
+    SVFUtil::outs() << "-----\n";
     SVFUtil::outs() << "Finding accesses of global variable: " << val->getName() << "\n";
 #ifdef USE_SVF_EX_DBOUT
     SVFUtil::outs() << "Finding childs of node " << pNode->getId() << " (value node)\n";
@@ -349,7 +350,7 @@ void getGlobalRevPts(PointerAnalysis* pta, std::vector<NodeID> &glbs)
 static Option<unsigned> valueIdx(
     "value-idx",
     "Index of variable wishes to be inspected",
-    0
+    UINT_MAX
 );
 
 /* TODO: allow user to leave out bc file, directly select from these tests */
@@ -434,11 +435,26 @@ int main(int argc, char ** argv)
     std::vector<NodeID> globals;
     getGlobalObject(globals);
 
-    /* TODO: check if this copy is bad */
-    unsigned gid = valueIdxToGlobalIdx[valueIdx()];
-    Set<NodeID> interestedPtrs = ander->getRevPts(globals[gid]);
-    printPts(globals[gid], interestedPtrs);
-    traverseOnVFG(svfg, pag->getGNode(globals[gid])->getValue(), &interestedPtrs);
+    /* If value idx is not set, inspect all global variables */
+    if (valueIdx() == UINT_MAX) {
+        /* TODO: eliminate code duplication */
+        for (auto id : globals) {
+            Set<NodeID> interestedPtrs = ander->getRevPts(id);
+#ifdef USE_SVF_EX_DBOUT
+            printPts(id, interestedPtrs);
+#endif
+            traverseOnVFG(svfg, pag->getGNode(id)->getValue(), &interestedPtrs);
+        }
+    } else {
+        /* TODO: check if this copy is bad */
+        unsigned gid = valueIdxToGlobalIdx[valueIdx()];
+        Set<NodeID> interestedPtrs = ander->getRevPts(globals[gid]);
+#ifdef USE_SVF_EX_DBOUT
+        printPts(globals[gid], interestedPtrs);
+#endif
+        traverseOnVFG(svfg, pag->getGNode(globals[gid])->getValue(), &interestedPtrs);
+    }
+    
     // getGlobalRevPts(ander, globals);
 
     // SVFUtil::outs() << printPts(ander, globals[2]);
