@@ -163,41 +163,9 @@ void traverseOnICFG(ICFG* icfg, const ICFGNode* iNode)
     }
 }
 
-/*!
- * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
- */
-void traverseOnVFG(const SVFG* vfg, const SVFValue* val)
+/* traverse VFG and find definition for only 1 layer */
+void singleLayerVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited)
 {
-    SVFIR* pag = SVFIR::getPAG();
-
-    PAGNode* pNode = pag->getGNode(pag->getValueNode(val));
-    const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
-    FIFOWorkList<const VFGNode*> worklist;
-    Set<const VFGNode*> visited;
-    worklist.push(vNode);
-
-    /// Traverse along VFG
-    SVFUtil::outs() << "Finding childs of node " << pNode->getId() << "\n";
-    while (!worklist.empty())
-    {
-        const VFGNode* vNode = worklist.pop();
-        for (VFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
-                    vNode->OutEdgeEnd(); it != eit; ++it)
-        {
-            VFGEdge* edge = *it;
-            VFGNode* succNode = edge->getDstNode();
-            if (visited.find(succNode) == visited.end())
-            {
-                visited.insert(succNode);
-                worklist.push(succNode);
-                // if (StmtVFGNode *tmp_node = SVFUtil::dyn_cast<StmtVFGNode>(succNode))
-                //     SVFUtil::outs() << tmp_node->toString() << "\n";
-                // SVFUtil::outs() << "Adding node " << succNode->getValue() << "\n";
-            }
-        }
-    }
-
-    /// Collect all LLVM Values
     for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
     {
         /* Generic VFG and node usages:
@@ -268,7 +236,44 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val)
     }
 }
 
-void getGlobalObject(std::vector<const SVFValue *> &glbs)
+/*!
+ * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
+ */
+void traverseOnVFG(const SVFG* vfg, const SVFValue* val)
+{
+    SVFIR* pag = SVFIR::getPAG();
+
+    PAGNode* pNode = pag->getGNode(pag->getValueNode(val));
+    const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
+    FIFOWorkList<const VFGNode*> worklist;
+    Set<const VFGNode*> visited;
+    worklist.push(vNode);
+
+    /// Traverse along VFG
+    SVFUtil::outs() << "Finding childs of node " << pNode->getId() << "\n";
+    while (!worklist.empty())
+    {
+        const VFGNode* vNode = worklist.pop();
+        for (VFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
+                    vNode->OutEdgeEnd(); it != eit; ++it)
+        {
+            VFGEdge* edge = *it;
+            VFGNode* succNode = edge->getDstNode();
+            if (visited.find(succNode) == visited.end())
+            {
+                visited.insert(succNode);
+                worklist.push(succNode);
+                // if (StmtVFGNode *tmp_node = SVFUtil::dyn_cast<StmtVFGNode>(succNode))
+                //     SVFUtil::outs() << tmp_node->toString() << "\n";
+                // SVFUtil::outs() << "Adding node " << succNode->getValue() << "\n";
+            }
+        }
+    }
+
+    singleLayerVFGCallback(vfg, visited);
+}
+
+void getGlobalObject(std::vector<NodeID> &glbs)
 {
     SVFIR* pag = SVFIR::getPAG();
     
@@ -287,12 +292,23 @@ void getGlobalObject(std::vector<const SVFValue *> &glbs)
         {
             if(SVFUtil::isa<SVFGlobalValue>(val)) {
                 SVFUtil::outs() << "Finding global: " << val->getName() << ", at PAG id: " << pagNode->getId() << "\n";
-                glbs.emplace_back(val);
+                glbs.emplace_back(it->first);
             }
         }
     }
 }
 
+void getGlobalRevPts(PointerAnalysis* pta, std::vector<NodeID> &glbs)
+{
+    for (auto id : glbs) {
+        auto &RevPts = pta->getRevPts(id);
+        SVFUtil::outs() << "Printing Reverse Points-to Set of NodeID " << id << ": ";
+        for (auto &it : RevPts) {
+            SVFUtil::outs() << it << " ";
+        }
+        SVFUtil::outs() << "\n";
+    }
+}
 
 int main(int argc, char ** argv)
 {
@@ -338,10 +354,12 @@ int main(int argc, char ** argv)
     svfBuilder.buildFullSVFG(ander);
 
     /// Collect uses of an LLVM Value
-    std::vector<const SVFValue *> globals;
+    std::vector<NodeID> globals;
     getGlobalObject(globals);
-    traverseOnVFG(svfg, globals[0]);
-    // SVFUtil::outs() << printPts(ander, globals[0]);
+    traverseOnVFG(svfg, pag->getGNode(globals[0])->getValue());
+    // getGlobalRevPts(ander, globals);
+
+    // SVFUtil::outs() << printPts(ander, globals[2]);
 
 
     /// Collect all successor nodes on ICFG
