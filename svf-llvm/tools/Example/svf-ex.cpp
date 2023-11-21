@@ -241,6 +241,8 @@ void checkInterestedVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited, 
     for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
     {
         const VFGNode* node = *it;
+        /* TODO: add independent debug option */
+        SVFUtil::outs() << "Checking VFG node " << node->getId() << "\n";
         /* For any load, if their source operand falls into interested set */
         if (const LoadVFGNode *ln = SVFUtil::dyn_cast<LoadVFGNode>(node)) {
             if (interestedPtrs->find(ln->getPAGSrcNodeID()) != interestedPtrs->end()) {
@@ -285,7 +287,8 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
                 worklist.push(succNode);
                 // if (StmtVFGNode *tmp_node = SVFUtil::dyn_cast<StmtVFGNode>(succNode))
                 //     SVFUtil::outs() << tmp_node->toString() << "\n";
-                // SVFUtil::outs() << "Adding node " << succNode->getValue() << "\n";
+                /* TODO: add independent debug option */
+                SVFUtil::outs() << "Adding node " << succNode->getId() << "\n";
             }
         }
     }
@@ -311,6 +314,7 @@ void getGlobalObject(std::vector<NodeID> &glbs)
         }
         if(const SVFValue* val = pagNode->getValue())
         {
+            /* TODO: find a way to differentiate instances of the same name */
             if(SVFUtil::isa<SVFGlobalValue>(val)) {
                 SVFUtil::outs() << "Finding global: " << val->getName() << ", at PAG id: " << pagNode->getId() << "\n";
                 glbs.emplace_back(it->first);
@@ -331,25 +335,45 @@ void getGlobalRevPts(PointerAnalysis* pta, std::vector<NodeID> &glbs)
     }
 }
 
-void prepareInterestedPts(PointerAnalysis *pta, std::vector<NodeID> &glbs, Set<NodeID> &ipts)
-{
+static Option<unsigned> valueIdx(
+    "value-idx",
+    "Index of variable wishes to be inspected",
+    0
+);
+
+/* TODO: allow user to leave out bc file, directly select from these tests */
+/* TODO: run tests automatically */
+static unsigned valueIdxToGlobalIdx[] = {
     /* struct.bc */
-    /* struct.a */
-    // ipts = pta->getRevPts(glbs[2]); 
-    /* struct.b */
-    // ipts = pta->getRevPts(glbs[3]);
-    /* struct.c */
-    // ipts = pta->getRevPts(glbs[4]);
+    2, // struct.a -> 0
+    3, // struct.b -> 1
+    4, // struct.c -> 2
 
     /* multi-ptr.bc */
-    /* glb */
-    // ipts = pta->getRevPts(glbs[1]);
-    /* glb2 */
-    // ipts = pta->getRevPts(glbs[3]);
+    1, // glb -> 3
+    3, // glb2 -> 4
 
     /* multi-layer-dep.bc */
-    /* glb */
-    ipts = pta->getRevPts(glbs[1]);
+    1, // glb -> 5
+
+    /* array.cc */
+    2, // arr -> 6
+    
+    /* same-name.cc */
+    1, // glb -> 7
+    3, // glb2 -> 8
+
+    /* main.bc (snort MRWE) */
+    32 // _ZL12global_table
+};
+
+static void printPts(NodeID id, Set<NodeID> &s)
+{
+    SVFUtil::outs() << "Printing RevPts for node " << id << ", size: " << s.size() << "\n{";
+    for (auto it : s) {
+        SVFUtil::outs() << it << " ";
+    }
+    SVFUtil::outs() << "}\n";
 }
 
 int main(int argc, char ** argv)
@@ -400,9 +424,10 @@ int main(int argc, char ** argv)
     getGlobalObject(globals);
 
     /* TODO: check if this copy is bad */
-    Set<NodeID> interestedPtrs;
-    prepareInterestedPts(ander, globals, interestedPtrs);
-    traverseOnVFG(svfg, pag->getGNode(globals[0])->getValue(), &interestedPtrs);
+    unsigned gid = valueIdxToGlobalIdx[valueIdx()];
+    Set<NodeID> interestedPtrs = ander->getRevPts(globals[gid]);
+    printPts(globals[gid], interestedPtrs);
+    traverseOnVFG(svfg, pag->getGNode(globals[gid])->getValue(), &interestedPtrs);
     // getGlobalRevPts(ander, globals);
 
     // SVFUtil::outs() << printPts(ander, globals[2]);
