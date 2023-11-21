@@ -33,6 +33,7 @@
 #include "SVF-LLVM/SVFIRBuilder.h"
 #include "Util/CommandLine.h"
 #include "Util/Options.h"
+#include "SVF-LLVM/LLVMModule.h"
 
 using namespace std;
 using namespace SVF;
@@ -48,7 +49,7 @@ SVF::AliasResult aliasQuery(PointerAnalysis* pta, SVFValue* v1, SVFValue* v2)
 /*!
  * An example to print points-to set of an LLVM value
  */
-std::string printPts(PointerAnalysis* pta, SVFValue* val)
+std::string printPts(PointerAnalysis* pta, const SVFValue* val)
 {
 
     std::string str;
@@ -165,7 +166,7 @@ void traverseOnICFG(ICFG* icfg, const ICFGNode* iNode)
 /*!
  * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
  */
-void traverseOnVFG(const SVFG* vfg, SVFValue* val)
+void traverseOnVFG(const SVFG* vfg, const SVFValue* val)
 {
     SVFIR* pag = SVFIR::getPAG();
 
@@ -176,6 +177,7 @@ void traverseOnVFG(const SVFG* vfg, SVFValue* val)
     worklist.push(vNode);
 
     /// Traverse along VFG
+    SVFUtil::outs() << "Finding childs of node " << pNode->getId() << "\n";
     while (!worklist.empty())
     {
         const VFGNode* vNode = worklist.pop();
@@ -188,6 +190,9 @@ void traverseOnVFG(const SVFG* vfg, SVFValue* val)
             {
                 visited.insert(succNode);
                 worklist.push(succNode);
+                // if (StmtVFGNode *tmp_node = SVFUtil::dyn_cast<StmtVFGNode>(succNode))
+                //     SVFUtil::outs() << tmp_node->toString() << "\n";
+                // SVFUtil::outs() << "Adding node " << succNode->getValue() << "\n";
             }
         }
     }
@@ -195,12 +200,99 @@ void traverseOnVFG(const SVFG* vfg, SVFValue* val)
     /// Collect all LLVM Values
     for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
     {
-        // const VFGNode* node = *it;
-        /// can only query VFGNode involving top-level pointers (starting with % or @ in LLVM IR)
-        /// PAGNode* pNode = vfg->getLHSTopLevPtr(node);
-        /// SVFValue* val = pNode->getValue();
+        /* Generic VFG and node usages:
+         * vfg->getLHSTopLevPtr(node): get a node's LHS top level pointer. Not sure what it used for
+         * vfg->getRHSVar/getLHSVar(): get a node's LHS/RHS variable. Not sure why the above iface is a separate one
+         */
+        const VFGNode* node = *it;
+        if (const LoadVFGNode *ln = SVFUtil::dyn_cast<LoadVFGNode>(node)) {
+            SVFUtil::outs() << "Loading object at " << ln->getValue()->getSourceLoc();
+            /* LoadVFGNode usages:
+             * ln->toString(): get raw LLVM instructions
+             * ln->getValue(): get SVF value of node. Quite similar with LLVM Value
+             * ln->getDefSVFGNode(): get definition of current node. Hopefully it's the top-level one
+             * ln->getDefSVFVars(): Return a BV containing definition variables (ID correspond to ConsG)
+             *      Not sure what this iface is used for
+             */
+            const SVFGNode *def = vfg->getDefSVFGNode(ln->getPAGSrcNode());
+            /* Loading from a struct/array, and thus GEP */
+            if (const GepVFGNode *gep_def = SVFUtil::dyn_cast<GepVFGNode>(def)) {
+                const GepStmt *gs = SVFUtil::dyn_cast<GepStmt>(gep_def->getPAGEdge());
+                SVFUtil::outs() << ", Index: " << gs->getConstantFieldIdx() << "\n";
+            } 
+            /* Loading directly from a global variable, easy */
+            else if (const AddrVFGNode *addr_def = SVFUtil::dyn_cast<AddrVFGNode>(def)) {
+                const AddrStmt *ads = SVFUtil::dyn_cast<AddrStmt>(addr_def->getPAGEdge());
+                assert(ads);
+                SVFUtil::outs() << "\n";
+            }
+            /* Important: fail-safe way of handling source nodes */
+            else {
+                assert(false && "Load is not from a GEP or ADDR! Debug for more info!\n");
+            }
+        }
+        // else if (const GepVFGNode *gn = SVFUtil::dyn_cast<GepVFGNode>(node)) {
+        //     /* GepVFGNode usages:
+        //      * gn->toString(): get raw LLVM instructions
+        //      * gn->getPAGEdge(): get PAG edge, which is a statement
+        //      * gn->getPAGEdge()->getSrcID()/getDstID(): get src/dst operand for this edge
+        //      * gs->getConstantFieldIdx(): get constant field offset of a Gep statement
+        //      */
+        //     const GepStmt *gs = SVFUtil::dyn_cast<GepStmt>(gn->getPAGEdge());
+        //     SVFUtil::outs() << "GEP at Src: " << gn->getPAGEdge()->getSrcID() << ", index: " << gs->getConstantFieldIdx() << "\n";
+        // }
+        else if (const StoreVFGNode *svn = SVFUtil::dyn_cast<StoreVFGNode>(node)) {
+            /* StoreVFGNode usages:
+             * Largely symmetric with Load. Snipped for brevity.
+             */
+            SVFUtil::outs() << "Storing to object at " << svn->getValue()->getSourceLoc();
+            const SVFGNode *def = vfg->getDefSVFGNode(svn->getPAGDstNode());
+            /* Storing to struct/array */
+            if (const GepVFGNode *gep_def = SVFUtil::dyn_cast<GepVFGNode>(def)) {
+                const GepStmt *gs = SVFUtil::dyn_cast<GepStmt>(gep_def->getPAGEdge());
+                SVFUtil::outs() << ", Index: " << gs->getConstantFieldIdx() << "\n";
+            }
+            /* Direct store */
+            else if (const AddrVFGNode *addr_def = SVFUtil::dyn_cast<AddrVFGNode>(def)) {
+                const AddrStmt *ads = SVFUtil::dyn_cast<AddrStmt>(addr_def->getPAGEdge());
+                assert(ads);
+                SVFUtil::outs() << "\n";
+            }
+            else {
+                assert(false && "Store is not from a GEP or ADDR! Debug for more info!\n");
+            }
+        }
+        else {
+            // SVFUtil::outs() << "At VFG nodeID: " << node->getId() << ", type: " << node->getNodeKind() << "\n";
+        }
     }
 }
+
+void getGlobalObject(std::vector<const SVFValue *> &glbs)
+{
+    SVFIR* pag = SVFIR::getPAG();
+    
+    for(SVFIR::iterator it = pag->begin(), eit = pag->end(); it!=eit; it++)
+    {
+        PAGNode* pagNode = it->second;
+        if (SVFUtil::isa<DummyValVar, DummyObjVar>(pagNode))
+            continue;
+
+        if(GepObjVar* gepobj = SVFUtil::dyn_cast<GepObjVar>(pagNode))
+        {
+            if(SVFUtil::isa<DummyObjVar>(pag->getGNode(gepobj->getBaseNode())))
+                continue;
+        }
+        if(const SVFValue* val = pagNode->getValue())
+        {
+            if(SVFUtil::isa<SVFGlobalValue>(val)) {
+                SVFUtil::outs() << "Finding global: " << val->getName() << ", at PAG id: " << pagNode->getId() << "\n";
+                glbs.emplace_back(val);
+            }
+        }
+    }
+}
+
 
 int main(int argc, char ** argv)
 {
@@ -235,18 +327,21 @@ int main(int argc, char ** argv)
 
     /// ICFG
     ICFG* icfg = pag->getICFG();
-    icfg->dump("icfg");
+    // icfg->dump("icfg");
 
     /// Value-Flow Graph (VFG)
     VFG* vfg = new VFG(callgraph);
 
     /// Sparse value-flow graph (SVFG)
     SVFGBuilder svfBuilder(true);
-    //SVFG* svfg =
+    SVFG* svfg = 
     svfBuilder.buildFullSVFG(ander);
 
     /// Collect uses of an LLVM Value
-    /// traverseOnVFG(svfg, value);
+    std::vector<const SVFValue *> globals;
+    getGlobalObject(globals);
+    traverseOnVFG(svfg, globals[0]);
+    // SVFUtil::outs() << printPts(ander, globals[0]);
 
 
     /// Collect all successor nodes on ICFG
