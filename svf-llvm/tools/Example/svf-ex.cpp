@@ -241,8 +241,9 @@ void checkInterestedVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited, 
     for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
     {
         const VFGNode* node = *it;
-        /* TODO: add independent debug option */
+#ifdef USE_SVF_EX_DBOUT
         SVFUtil::outs() << "Checking VFG node " << node->getId() << "\n";
+#endif
         /* For any load, if their source operand falls into interested set */
         if (const LoadVFGNode *ln = SVFUtil::dyn_cast<LoadVFGNode>(node)) {
             if (interestedPtrs->find(ln->getPAGSrcNodeID()) != interestedPtrs->end()) {
@@ -265,6 +266,10 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
 {
     SVFIR* pag = SVFIR::getPAG();
 
+    /* TODO: check the semantic of this line.
+     * Currently, I view this as "finding the actual object".
+     * Therefore, if we are holding the pointer of a glbvar, pNode is at its memory object I believe
+     */
     PAGNode* pNode = pag->getGNode(pag->getValueNode(val));
     const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
     FIFOWorkList<const VFGNode*> worklist;
@@ -272,7 +277,10 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
     worklist.push(vNode);
 
     /// Traverse along VFG
-    SVFUtil::outs() << "Finding childs of node " << pNode->getId() << "\n";
+    SVFUtil::outs() << "Finding accesses of global variable: " << val->getName() << "\n";
+#ifdef USE_SVF_EX_DBOUT
+    SVFUtil::outs() << "Finding childs of node " << pNode->getId() << " (value node)\n";
+#endif
     while (!worklist.empty())
     {
         const VFGNode* vNode = worklist.pop();
@@ -287,8 +295,9 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
                 worklist.push(succNode);
                 // if (StmtVFGNode *tmp_node = SVFUtil::dyn_cast<StmtVFGNode>(succNode))
                 //     SVFUtil::outs() << tmp_node->toString() << "\n";
-                /* TODO: add independent debug option */
+#ifdef USE_SVF_EX_DBOUT
                 SVFUtil::outs() << "Adding node " << succNode->getId() << "\n";
+#endif
             }
         }
     }
@@ -316,7 +325,9 @@ void getGlobalObject(std::vector<NodeID> &glbs)
         {
             /* TODO: find a way to differentiate instances of the same name */
             if(SVFUtil::isa<SVFGlobalValue>(val)) {
+#ifdef USE_SVF_EX_DBOUT
                 SVFUtil::outs() << "Finding global: " << val->getName() << ", at PAG id: " << pagNode->getId() << "\n";
+#endif
                 glbs.emplace_back(it->first);
             }
         }
