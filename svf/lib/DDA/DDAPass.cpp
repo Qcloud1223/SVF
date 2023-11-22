@@ -51,6 +51,30 @@ DDAPass::~DDAPass()
         delete _client;
 }
 
+void DDAPass::runInternalUse(SVFIR *pag)
+{
+    /* instead of calling `selectClient`, delay queries to runtime in an on-demand fashion */
+    /* client is set to query all on default */
+    _client = new DDAClient(pag->getModule());
+    _client->initialise(pag->getModule());
+
+    /* essential part of runPointerAnalysis */
+    /* TODO: currently I use flow-sensitive only. Consider context sensitive some time. */
+    /* _pta is used as a singleton for now */
+    _pta = std::make_unique<FlowDDA>(pag, _client);
+    _pta->initialize();
+}
+
+/* compute and return query result for an SVFG node `id` */
+const PointsTo& DDAPass::makeQuery(NodeID id)
+{
+    _client->answerOneQuery(_pta.get(), id);
+    const PointsTo &pts = _pta->getPts(id);
+    /* Note that _pta->finalize is not called. I doubt I need it. */
+    return pts;
+}
+
+/* Below is the original DDA interfaces which are designed to be use directly by users */
 
 void DDAPass::runOnModule(SVFIR* pag)
 {

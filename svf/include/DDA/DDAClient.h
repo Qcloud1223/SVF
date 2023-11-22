@@ -101,6 +101,9 @@ public:
     virtual inline void performStat(PointerAnalysis*) {}
 
     virtual inline void collectWPANum(SVFModule*) {}
+
+    /* DDA interfaces designed for internal uses */
+    virtual void answerOneQuery(PointerAnalysis *pta, NodeID id);
 protected:
     void addCandidate(NodeID id)
     {

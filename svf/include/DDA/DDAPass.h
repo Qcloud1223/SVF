@@ -74,6 +74,10 @@ public:
         return "DDAPass";
     }
 
+    /* DDA interfaces designed for internal uses */
+    virtual void runInternalUse(SVFIR *pag);
+
+    virtual const PointsTo& makeQuery(NodeID id);
 private:
     /// Print queries' pts
     void printQueryPTS();

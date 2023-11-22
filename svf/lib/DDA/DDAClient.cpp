@@ -42,6 +42,16 @@
 using namespace SVF;
 using namespace SVFUtil;
 
+/* answer one query according to id, w/o r.t. any budget */
+void DDAClient::answerOneQuery(PointerAnalysis *pta, NodeID id)
+{
+    PAGNode *node = pta->getPAG()->getGNode(id);
+    if (pta->getPAG()->isValidTopLevelPtr(node)) {
+        setCurrentQueryPtr(id);
+        pta->computeDDAPts(id);
+    }
+}
+
 
 void DDAClient::answerQueries(PointerAnalysis* pta)
 {
@@ -52,6 +62,9 @@ void DDAClient::answerQueries(PointerAnalysis* pta)
     SVFUtil::getMemoryUsageKB(&vmrss, &vmsize);
     stat->setMemUsageBefore(vmrss, vmsize);
 
+    /* Q: DDA is indeed a subsequent procedure of constructing PAG.
+     * Also from this we can get that NodeID is the ID from PAG.
+     */
     collectCandidateQueries(pta->getPAG());
 
     u32_t count = 0;

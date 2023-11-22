@@ -35,6 +35,11 @@
 #include "Util/Options.h"
 #include "SVF-LLVM/LLVMModule.h"
 
+/* DDA related */
+#include "DDA/DDAPass.h"
+#include "DDA/FlowDDA.h"
+#include "DDA/DDAClient.h"
+
 using namespace std;
 using namespace SVF;
 
@@ -236,6 +241,7 @@ void singleLayerVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited)
     }
 }
 
+/* check whether the SRC of LOAD/DST of STORE is in our interested list */
 void checkInterestedVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited, Set<NodeID> *interestedPtrs)
 {
     for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
@@ -259,10 +265,83 @@ void checkInterestedVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited, 
     }
 }
 
+static DDAPass ddaForCallback;
+/* check whether DDA query result of SRC of LOAD/DST of STORE is in our interested list */
+void checkInterestedVFGCallbackDDA(const SVFG *vfg, Set<const VFGNode *> &visited, Set<NodeID> *interestedPtrs, NodeID pagHead)
+{
+    for(Set<const VFGNode*>::const_iterator it = visited.begin(), eit = visited.end(); it!=eit; ++it)
+    {
+        const VFGNode* node = *it;
+#ifdef USE_SVF_EX_DBOUT
+        SVFUtil::outs() << "Checking VFG node " << node->getId() << "\n";
+        bool hit = false;
+#endif
+        /* For any load, if their source operand falls into interested set,
+         * check if its query result has current VFG head 
+         */
+        if (const LoadVFGNode *ln = SVFUtil::dyn_cast<LoadVFGNode>(node)) {
+            if (interestedPtrs->find(ln->getPAGSrcNodeID()) != interestedPtrs->end()) {
+                const PointsTo &pts = ddaForCallback.makeQuery(ln->getPAGSrcNodeID());
+                for (PointsTo::iterator it = pts.begin(), eit = pts.end(); it != eit; ++it) {
+                    if (*it == pagHead) {
+                        SVFUtil::outs() << "Loading from " << ln->getPAGSrcNodeID() << ", location: " << ln->getValue()->getSourceLoc();
+                        if (pts.count() != 1)
+                            SVFUtil::outs() << " (dubious)";
+                        SVFUtil::outs() << "\n";
+#ifdef USE_SVF_EX_DBOUT                        
+                        hit = true;
+#endif
+                        break;
+                    }
+                }
+#ifdef USE_SVF_EX_DBOUT
+                if (hit == false) {
+                    /* We are interested in this pointer,
+                     * but its definition is not current variable we are watching.
+                     * This means that strong updates happen and DDA has already found that for us.
+                     */
+                    SVFUtil::outs() << "Ignoring loading from " << ln->getPAGSrcNodeID() << ", location: " << ln->getValue()->getSourceLoc() << " (strong update)\n";
+                }
+#endif          
+            }
+        } 
+        /* For any store, if their destination operand falls into interested set,
+         * check if its query result has in current VFG head
+         */
+        else if (const StoreVFGNode *svn = SVFUtil::dyn_cast<StoreVFGNode>(node)) {
+             if (interestedPtrs->find(svn->getPAGDstNodeID()) != interestedPtrs->end()) {
+                const PointsTo &pts = ddaForCallback.makeQuery(svn->getPAGDstNodeID());
+                for (PointsTo::iterator it = pts.begin(), eit = pts.end(); it != eit; ++it) {
+                    if (*it == pagHead) {
+                        SVFUtil::outs() << "Storing to " << svn->getPAGDstNodeID() << ", location: " << svn->getValue()->getSourceLoc();
+                        if (pts.count() != 1)
+                            SVFUtil::outs() << " (dubious)";
+                        SVFUtil::outs() << "\n";
+#ifdef USE_SVF_EX_DBOUT
+                        hit = true;
+#endif
+                        break;
+                    }
+                }
+#ifdef USE_SVF_EX_DBOUT
+                if (hit == false) {
+                    SVFUtil::outs() << "Ignoring storing to " << svn->getPAGDstNodeID() << ", location: " << svn->getValue()->getSourceLoc() << " (strong update)\n";
+                }
+#endif
+            }
+        }
+    }
+}
+
 /*!
  * An example to query/collect all the uses of a definition of a value along value-flow graph (VFG)
  */
-void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interestedPtrs = nullptr)
+/* Note that given an `SVFValue`, there seems no way to find the actual PAG node it correspond to,
+ * the only interfaces available are `getValueNode` and `getObjectNode`.
+ * So I archive the original interfaces here, and use directly PAG id, which is loseless.
+ */
+// void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interestedPtrs = nullptr)
+void traverseOnVFG(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPtrs = nullptr)
 {
     SVFIR* pag = SVFIR::getPAG();
 
@@ -270,7 +349,8 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
      * Currently, I view this as "finding the actual object".
      * Therefore, if we are holding the pointer of a glbvar, pNode is at its memory object I believe
      */
-    PAGNode* pNode = pag->getGNode(pag->getValueNode(val));
+    PAGNode *origPNode = pag->getGNode(pagId);
+    PAGNode* pNode = pag->getGNode(pag->getValueNode(origPNode->getValue()));
     const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
     FIFOWorkList<const VFGNode*> worklist;
     Set<const VFGNode*> visited;
@@ -278,7 +358,7 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
 
     /// Traverse along VFG
     SVFUtil::outs() << "-----\n";
-    SVFUtil::outs() << "Finding accesses of global variable: " << val->getName() << "\n";
+    SVFUtil::outs() << "Finding accesses of global variable: " << origPNode->getValue()->getName() << ", VFG ID: " << vNode->getId() << ", PAG ID: " << pagId << "\n";
 #ifdef USE_SVF_EX_DBOUT
     SVFUtil::outs() << "Finding childs of node " << pNode->getId() << " (value node)\n";
 #endif
@@ -304,7 +384,8 @@ void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interested
     }
 
     // singleLayerVFGCallback(vfg, visited);
-    checkInterestedVFGCallback(vfg, visited, interestedPtrs);
+    // checkInterestedVFGCallback(vfg, visited, interestedPtrs);
+    checkInterestedVFGCallbackDDA(vfg, visited, interestedPtrs, pagId);
 }
 
 void getGlobalObject(std::vector<NodeID> &glbs)
@@ -456,17 +537,23 @@ int main(int argc, char ** argv)
     std::vector<NodeID> globals;
     getGlobalObject(globals);
 
+    /* initialze a DDA pass
+     * Note that DDA object is declared as global 
+     * since I don't want to pass it in arguments
+     */
+    ddaForCallback.runInternalUse(pag);
+
     /* If value idx is not set, inspect all global variables */
     if (valueIdx() == UINT_MAX) {
         /* TODO: eliminate code duplication */
-        for (auto id : globals) {
-            Set<NodeID> interestedPtrs = ander->getRevPts(id);
+        for (auto gid : globals) {
+            Set<NodeID> interestedPtrs = ander->getRevPts(gid);
 #ifdef USE_SVF_EX_DBOUT
-            printPts(id, interestedPtrs);
+            printPts(gid, interestedPtrs);
 #endif
             // std::vector<NodeID> ptrs;
             // getMonitoredPointer(ptrs);
-            traverseOnVFG(svfg, pag->getGNode(id)->getValue(), &interestedPtrs);
+            traverseOnVFG(svfg, gid, &interestedPtrs);
         }
     } else {
         /* TODO: check if this copy is bad */
@@ -475,7 +562,7 @@ int main(int argc, char ** argv)
 #ifdef USE_SVF_EX_DBOUT
         printPts(globals[gid], interestedPtrs);
 #endif
-        traverseOnVFG(svfg, pag->getGNode(globals[gid])->getValue(), &interestedPtrs);
+        traverseOnVFG(svfg, gid, &interestedPtrs);
     }
     
     // getGlobalRevPts(ander, globals);

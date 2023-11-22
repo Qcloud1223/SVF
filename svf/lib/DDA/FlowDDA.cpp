@@ -46,15 +46,21 @@ void FlowDDA::computeDDAPts(NodeID id)
     LocDPItem::setMaxBudget(Options::FlowBudget());
 
     PAGNode* node = getPAG()->getGNode(id);
+    /* Q: for a node, get its definition node, which is stored in a map.
+     * so get the definition of a node is indeed log(n) since it is done 
+     * at SVFG construction
+     */
     LocDPItem dpm = getDPIm(node->getId(),getDefSVFGNode(node));
 
     /// start DDA analysis
     DOTIMESTAT(double start = DDAStat::getClk(true));
+    /* Q: get PTS of this node */
     const PointsTo& pts = findPT(dpm);
     DOTIMESTAT(ddaStat->_AnaTimePerQuery = DDAStat::getClk(true) - start);
     DOTIMESTAT(ddaStat->_TotalTimeOfQueries += ddaStat->_AnaTimePerQuery);
 
     if(isOutOfBudgetQuery() == false)
+    /* Q: expand PTS of this node */
         unionPts(node->getId(),pts);
     else
         handleOutOfBudgetDpm(dpm);
