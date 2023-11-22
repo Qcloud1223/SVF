@@ -335,6 +335,27 @@ void getGlobalObject(std::vector<NodeID> &glbs)
     }
 }
 
+void getMonitoredPointer(std::vector<NodeID> &ptrs) 
+{
+    SVFIR* pag = SVFIR::getPAG();
+    for(SVFIR::iterator it = pag->begin(), eit = pag->end(); it!=eit; it++)
+    {
+        PAGNode* pagNode = it->second;
+        if (SVFUtil::isa<DummyValVar, DummyObjVar>(pagNode))
+            continue;
+        
+        if (GepObjVar *gepobj = SVFUtil::dyn_cast<GepObjVar>(pagNode)) {
+            if(SVFUtil::isa<DummyObjVar>(pag->getGNode(gepobj->getBaseNode())))
+                continue;
+            /* TODO */
+            SVFUtil::outs() << "Id of PAG GEP node " << gepobj->getId() << "\n";
+            ptrs.emplace_back(it->first);
+        }
+
+    }
+
+}
+
 void getGlobalRevPts(PointerAnalysis* pta, std::vector<NodeID> &glbs)
 {
     for (auto id : glbs) {
@@ -443,6 +464,8 @@ int main(int argc, char ** argv)
 #ifdef USE_SVF_EX_DBOUT
             printPts(id, interestedPtrs);
 #endif
+            // std::vector<NodeID> ptrs;
+            // getMonitoredPointer(ptrs);
             traverseOnVFG(svfg, pag->getGNode(id)->getValue(), &interestedPtrs);
         }
     } else {
