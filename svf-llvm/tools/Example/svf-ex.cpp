@@ -424,6 +424,8 @@ void traverseOnVFGLocal(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPt
     PAGNode *origPNode = pag->getGNode(pagId);
     PAGNode* pNode = pag->getGNode(pag->getValueNode(origPNode->getValue()));
     const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
+    /* Note: comparing name is also OK due to name mangling */
+    const auto &baseFunction = vNode->getICFGNode()->getFun();
     FIFOWorkList<const VFGNode*> worklist;
     Set<const VFGNode*> visited;
     worklist.push(vNode);
@@ -442,15 +444,18 @@ void traverseOnVFGLocal(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPt
         {
             VFGEdge* edge = *it;
             VFGNode* succNode = edge->getDstNode();
-            /* FIXME: This is only a temporary fix.
-             * We should find the OUT nodes of **current function**, 
-             * otherwise this will stop upon return of any subroutine.
-             */
-            if (!SVFUtil::isa<ActualOUTSVFGNode, FormalOUTSVFGNode>(succNode)) {
-                if (visited.find(succNode) == visited.end()) {
-                    visited.insert(succNode);
-                    worklist.push(succNode);
-                }
+            /* stop if current node tries to return from the function we are from */
+            if (ActualOUTSVFGNode *aosn = SVFUtil::dyn_cast<ActualOUTSVFGNode>(succNode)) {
+                if (aosn->getFun() == baseFunction)
+                    continue;
+            } else if (FormalOUTSVFGNode *fosn = SVFUtil::dyn_cast<FormalOUTSVFGNode>(succNode)) {
+                if (fosn->getFun() == baseFunction)
+                    continue;
+            }
+
+            if (visited.find(succNode) == visited.end()) {
+                visited.insert(succNode);
+                worklist.push(succNode);
             }
         }
     }
