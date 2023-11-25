@@ -168,6 +168,25 @@ void traverseOnICFG(ICFG* icfg, const ICFGNode* iNode)
     }
 }
 
+/* travrese ICFG to find CallICFGNode of certain function */
+NodeID traverseICFGForFunction(ICFG* icfg, std::string funcName)
+{
+    for (const auto &iPair : *icfg) {
+        const auto &iNode = iPair.second;
+        if (CallICFGNode *cn = SVFUtil::dyn_cast<CallICFGNode>(iNode)) {
+            const auto &callee = SVFUtil::getCallee(cn->getCallSite());
+            if (callee->getName() == funcName) {
+                /* TODO: make further check to make sure the function has only one callsite */
+                return cn->getId();
+            } 
+            else {
+                SVFUtil::outs() << "Find callsite of irrelevent function: " << callee->getName() << "\n";
+            }
+        }        
+    }
+    return 0;
+}
+
 /* traverse VFG and find definition for only 1 layer */
 void singleLayerVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited)
 {
@@ -341,7 +360,13 @@ void checkInterestedVFGCallbackDDA(const SVFG *vfg, Set<const VFGNode *> &visite
  * So I archive the original interfaces here, and use directly PAG id, which is loseless.
  */
 // void traverseOnVFG(const SVFG* vfg, const SVFValue* val, Set<NodeID> *interestedPtrs = nullptr)
-void traverseOnVFG(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPtrs = nullptr)
+/* Note for global variables, the PAG node is already its memory object, 
+ * and thus we can make queries on whether statements points to it.
+ * However, when we start from a temporary pointer, i.e., alias of an object,
+ * query results will point to its answer instead itself. 
+ * So we provide a reference answer for this case.
+ */
+void traverseOnVFG(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPtrs = nullptr, NodeID answerPAGId = 0)
 {
     SVFIR* pag = SVFIR::getPAG();
 
@@ -358,7 +383,11 @@ void traverseOnVFG(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPtrs = 
 
     /// Traverse along VFG
     SVFUtil::outs() << "-----\n";
-    SVFUtil::outs() << "Finding accesses of global variable: " << origPNode->getValue()->getName() << ", VFG ID: " << vNode->getId() << ", PAG ID: " << pagId << "\n";
+    if (answerPAGId == 0)
+        SVFUtil::outs() << "Finding accesses of global variable: " << origPNode->getValue()->getName();
+    else
+        SVFUtil::outs() << "Finding accesses of local variable, PAG definition ID: " << answerPAGId;
+    SVFUtil::outs() << ", VFG ID: " << vNode->getId() << ", PAG ID: " << pagId << "\n";
 #ifdef USE_SVF_EX_DBOUT
     SVFUtil::outs() << "Finding childs of node " << pNode->getId() << " (value node)\n";
 #endif
@@ -384,8 +413,48 @@ void traverseOnVFG(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPtrs = 
     }
 
     // singleLayerVFGCallback(vfg, visited);
-    // checkInterestedVFGCallback(vfg, visited, interestedPtrs);
-    checkInterestedVFGCallbackDDA(vfg, visited, interestedPtrs, pagId);
+    // checkInterestedVFGCallback(vfg, visited, interestedPtrs);       
+    checkInterestedVFGCallbackDDA(vfg, visited, interestedPtrs, answerPAGId ? answerPAGId : pagId);
+}
+
+/* traverse VFG starting from a node, but stop when the current function returns */
+void traverseOnVFGLocal(const SVFG* vfg, NodeID pagId, Set<NodeID> *interestedPtrs = nullptr, NodeID answerPAGId = 0)
+{
+    SVFIR* pag = SVFIR::getPAG();
+    PAGNode *origPNode = pag->getGNode(pagId);
+    PAGNode* pNode = pag->getGNode(pag->getValueNode(origPNode->getValue()));
+    const VFGNode* vNode = vfg->getDefSVFGNode(pNode);
+    FIFOWorkList<const VFGNode*> worklist;
+    Set<const VFGNode*> visited;
+    worklist.push(vNode);
+
+    SVFUtil::outs() << "-----\n";
+    if (answerPAGId == 0)
+        SVFUtil::outs() << "Finding accesses of global variable: " << origPNode->getValue()->getName();
+    else
+        SVFUtil::outs() << "Finding accesses of local variable, PAG definition ID: " << answerPAGId;
+    SVFUtil::outs() << ", VFG ID: " << vNode->getId() << ", PAG ID: " << pagId << "\n";
+
+    while(!worklist.empty()) {
+        const VFGNode* vNode = worklist.pop();
+        for (VFGNode::const_iterator it = vNode->OutEdgeBegin(), eit =
+                    vNode->OutEdgeEnd(); it != eit; ++it)
+        {
+            VFGEdge* edge = *it;
+            VFGNode* succNode = edge->getDstNode();
+            /* FIXME: This is only a temporary fix.
+             * We should find the OUT nodes of **current function**, 
+             * otherwise this will stop upon return of any subroutine.
+             */
+            if (!SVFUtil::isa<ActualOUTSVFGNode, FormalOUTSVFGNode>(succNode)) {
+                if (visited.find(succNode) == visited.end()) {
+                    visited.insert(succNode);
+                    worklist.push(succNode);
+                }
+            }
+        }
+    }
+    checkInterestedVFGCallbackDDA(vfg, visited, interestedPtrs, answerPAGId ? answerPAGId : pagId);
 }
 
 void getGlobalObject(std::vector<NodeID> &glbs)
@@ -435,6 +504,28 @@ void getMonitoredPointer(std::vector<NodeID> &ptrs)
 
     }
 
+}
+
+/* Get the PAG node for i-th argument of function */
+NodeID getArgOfFunction(std::string funcName, unsigned idx) 
+{
+    SVFIR* pag = SVFIR::getPAG();
+    for(SVFIR::iterator it = pag->begin(), eit = pag->end(); it != eit; it++)
+    {
+        PAGNode *pagNode = it->second;
+        /* Prevent failure of getValue() */
+        if (SVFUtil::isa<DummyValVar, DummyObjVar>(pagNode))
+            continue;
+        
+        if (pagNode->getValue()->getKind() == SVFValue::SVFArg && 
+            pagNode->getFunction()->getName() == funcName &&
+            std::stoul(pagNode->getValueName()) == idx ) {
+            SVFUtil::outs() << "Find " << idx << " th argument of function " << funcName << " at PAG Node: " << pagNode->getId() << "\n";
+            return pagNode->getId();
+        }
+    }
+    SVFUtil::outs() << "Warning: no argument " << idx << " of function " << funcName << " found\n";
+    return UINT32_MAX;
 }
 
 void getGlobalRevPts(PointerAnalysis* pta, std::vector<NodeID> &glbs)
@@ -488,6 +579,18 @@ static void printPts(NodeID id, Set<NodeID> &s)
         SVFUtil::outs() << it << " ";
     }
     SVFUtil::outs() << "}\n";
+}
+
+/* find accesses of an non global value */
+void findNonGlobalAccess(const SVFG *vfg, PointerAnalysis *pta, NodeID pagID)
+{
+    /* First, make query to find actual object it refers to */
+    const auto &defPAGNodes = ddaForCallback.makeQuery(pagID);
+    assert(defPAGNodes.count() == 1 && "Non global object has more than one definition?\n");
+    /* Then, get its PTS as our interested list */
+    auto defPTS = pta->getRevPts(*defPAGNodes.begin());
+    /* Finally, traverse VFG */
+    traverseOnVFG(vfg, pagID, &defPTS, *defPAGNodes.begin());
 }
 
 int main(int argc, char ** argv)
@@ -546,13 +649,12 @@ int main(int argc, char ** argv)
     /* If value idx is not set, inspect all global variables */
     if (valueIdx() == UINT_MAX) {
         /* TODO: eliminate code duplication */
+        /* TODO: check if this need copy elision */
         for (auto gid : globals) {
             Set<NodeID> interestedPtrs = ander->getRevPts(gid);
 #ifdef USE_SVF_EX_DBOUT
             printPts(gid, interestedPtrs);
 #endif
-            // std::vector<NodeID> ptrs;
-            // getMonitoredPointer(ptrs);
             traverseOnVFG(svfg, gid, &interestedPtrs);
         }
     } else {
@@ -565,6 +667,30 @@ int main(int argc, char ** argv)
         traverseOnVFG(svfg, gid, &interestedPtrs);
     }
     
+    /* Find access of function arguments, if necessary */
+    /* Get PAG ID of certain argument */
+    NodeID packetField = getArgOfFunction("_Z3fooP8myStruct", 0);
+    // findNonGlobalAccess(svfg, ander, packetField);
+    NodeID calliNodeID = traverseICFGForFunction(icfg, "_Z3fooP8myStruct");
+    if (calliNodeID == 0) {
+        SVFUtil::outs() << "Cannot find call ICFG node for function!\n";
+        return -1;
+    }
+    const auto &calliNode = icfg->getGNode(calliNodeID);
+    const auto &aisn = svfg->getActualINSVFGNodes(SVFUtil::dyn_cast<CallICFGNode>(calliNode));
+    /* it seems that only pointer type needs ActualIn */
+    assert(aisn.count() == 1);
+    const auto aisnID = *aisn.begin();
+    const auto &aisnNode = svfg->getGNode(aisnID);
+    /* hopefully this correspond to PAG id */
+    const auto &aisnPTS  = SVFUtil::dyn_cast<ActualINSVFGNode>(aisnNode)->getMRVer()->getMR()->getPointsTo();
+
+    /* traverse VFG from a function's FormalParm */
+    for (auto i : aisnPTS) {
+        Set<NodeID> tempRevPTS = ander->getRevPts(i);
+        assert(tempRevPTS.size() != 0 && "temporary variable does not has Rev PTS?");
+        traverseOnVFGLocal(svfg, packetField, &tempRevPTS, i);
+    }    
     // getGlobalRevPts(ander, globals);
 
     // SVFUtil::outs() << printPts(ander, globals[2]);
