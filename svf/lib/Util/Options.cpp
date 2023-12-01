@@ -485,15 +485,27 @@ Option<bool> Options::OPTSVFG(
     false
 );
 
-const Option<std::string> Options::WriteSVFG(
+Option<std::string> Options::WriteSVFG(
     "write-svfg",
     "Write SVFG's analysis results to a file",
     ""
 );
 
-const Option<std::string> Options::ReadSVFG(
+Option<std::string> Options::ReadSVFG(
     "read-svfg",
     "Read SVFG's analysis results from a file",
+    ""
+);
+
+Option<std::string> Options::WriteBinarySVFG(
+    "write-bin-svfg",
+    "Write SVFG's analysis results to a binary file",
+    ""
+);
+
+Option<std::string> Options::ReadBinarySVFG(
+    "read-bin-svfg",
+    "Read SVFG's analysis results from a binary file",
     ""
 );
 
@@ -739,13 +751,13 @@ const Option<bool> Options::PrintCGGraph(
     false
 );
 
-const Option<std::string> Options::WriteAnder(
+Option<std::string> Options::WriteAnder(
     "write-ander",
     "-write-ander=ir_annotator (Annotated IR with Andersen's results) or write Andersen's analysis results to a user-specified text file",
     ""
 );
 
-const Option<std::string> Options::ReadAnder(
+Option<std::string> Options::ReadAnder(
     "read-ander",
     "-read-ander=ir_annotator (Read Andersen's analysis results from the annotated IR, e.g., *.pre.bc) or from a text file",
     ""

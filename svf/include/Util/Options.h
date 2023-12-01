@@ -160,8 +160,10 @@ public:
     static const Option<bool> SVFGWithIndirectCall;
     static Option<bool> OPTSVFG;
 
-    static const Option<std::string> WriteSVFG;
-    static const Option<std::string> ReadSVFG;
+    static Option<std::string> WriteSVFG;
+    static Option<std::string> ReadSVFG;
+    static Option<std::string> WriteBinarySVFG;
+    static Option<std::string> ReadBinarySVFG;
 
     // FSMPTA.cpp
     static const Option<bool> UsePCG;
@@ -240,9 +242,9 @@ public:
     static const Option<bool> BriefConsCGDotGraph;
     static const Option<bool> PrintCGGraph;
     // static const Option<string> WriteAnder;
-    static const Option<std::string> WriteAnder;
+    static Option<std::string> WriteAnder;
     // static const Option<string> ReadAnder;
-    static const Option<std::string> ReadAnder;
+    static Option<std::string> ReadAnder;
     static const Option<bool> DiffPts;
     static Option<bool> DetectPWC;
     static const Option<bool> VtableInSVFIR;

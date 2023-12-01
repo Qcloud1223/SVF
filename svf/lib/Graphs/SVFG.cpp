@@ -230,6 +230,10 @@ void SVFG::buildSVFG()
     {
         readFile(Options::ReadSVFG());
     }
+    else if (!Options::ReadBinarySVFG().empty())
+    {
+        readBinaryFile(Options::ReadBinarySVFG());
+    }
     else
     {
         DBOUT(DGENERAL, outs() << pasMsg("\tCreate SVFG Addr-taken Node\n"));
@@ -242,6 +246,10 @@ void SVFG::buildSVFG()
         stat->indVFEdgeEnd();
         if (!Options::WriteSVFG().empty())
             writeToFile(Options::WriteSVFG());
+        if (!Options::WriteBinarySVFG().empty()) {
+            writeNodeToFile(Options::WriteBinarySVFG());
+            writeEdgeToFile(Options::WriteBinarySVFG());
+        }
     }
 }
 

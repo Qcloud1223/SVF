@@ -269,6 +269,9 @@ public:
 
     virtual void writeToFile(const std::string& filename);
     virtual void readFile(const std::string& filename);
+    virtual void writeNodeToFile(const std::string &filename);
+    virtual void writeEdgeToFile(const std::string &filename);
+    virtual void readBinaryFile(const std::string &filename);
     virtual MRVer* getMRVERFromString(const std::string& input);
 
 protected:
