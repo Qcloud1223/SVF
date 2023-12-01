@@ -49,7 +49,7 @@ static inline unsigned writeNodeWorker(
     auto defArrayLen = mrver->getDef()->getMR()->getPointsTo().count();
     if (unlikely(mrArrayLen + defArrayLen > 65527))
         assert(false && "Max buffer dump reached! try double the default buffer size");
-    unsigned realSize = mrArrayLen + defArrayLen + 8;
+    unsigned realSize = mrArrayLen + defArrayLen + 9;
     writeBuffer[0] = realSize;
     writeBuffer[1] = vfgID;
     writeBuffer[2] = ty;
@@ -66,7 +66,7 @@ static inline unsigned writeNodeWorker(
         writeBuffer[idx++] = ii;
     
     f.write(reinterpret_cast<const char *>(writeBuffer), idx * sizeof(unsigned));
-    return idx;
+    return realSize;
 }
 
 static inline unsigned writeNoMRverWorker(
@@ -83,13 +83,13 @@ static inline unsigned writeNoMRverWorker(
       4: (optional) intra (4)
      */
     /* use 1 unsigned long as the flag, such that we know from length if it's intra */
-    writeBuffer[0] = (intra ? 4 : 3);
+    writeBuffer[0] = (intra ? 5 : 4);
     writeBuffer[1] = srcVfgID;
     writeBuffer[2] = ty;
     writeBuffer[3] = dstVfgID;
 
-    f.write(reinterpret_cast<const char *>(writeBuffer), (writeBuffer[0] + 1) * sizeof(unsigned));
-    return writeBuffer[0] + 1;
+    f.write(reinterpret_cast<const char *>(writeBuffer), writeBuffer[0] * sizeof(unsigned));
+    return writeBuffer[0];
 }
 
 static inline unsigned writeOpVerWorker(
@@ -121,8 +121,7 @@ static inline unsigned writeOpVerWorker(
         consumed += mrArrayLen + defArrayLen + 6;
         if (unlikely(consumed > 65535))
             assert(false && "Max buffer dump reached for OpVer! try double the default buffer size");
-        /* length not include the first one */
-        writeBuffer[idx++] = mrArrayLen + defArrayLen + 5;
+        writeBuffer[idx++] = mrArrayLen + defArrayLen + 6;
         writeBuffer[idx++] = mrver->getID();
         writeBuffer[idx++] = mrver->getSSAVersion();
         writeBuffer[idx++] = mrver->getDef()->getType();
@@ -133,10 +132,10 @@ static inline unsigned writeOpVerWorker(
         for (auto ii : mrver->getDef()->getMR()->getPointsTo())
             writeBuffer[idx++] = ii;
     }
-    writeBuffer[0] = consumed;
+    writeBuffer[0] = consumed + 1;
 
-    f.write(reinterpret_cast<const char *>(writeBuffer), (consumed + 1) * sizeof(unsigned));
-    return consumed + 1;
+    f.write(reinterpret_cast<const char *>(writeBuffer), writeBuffer[0] * sizeof(unsigned));
+    return writeBuffer[0];
 }
 
 static inline MRVer *readMRver(const unsigned *buffer)
@@ -391,25 +390,25 @@ void SVFG::readBinaryFile(const string &filename)
             {
                 Map<u32_t, const MRVer *> OPVers;
                 int index = 0;
-                auto opverOff = nodeStart[0] + 1;
+                auto opverOff = nodeStart[0];
                 auto icfgNodeId = nodeStart[3];
                 const auto &mrver = readMRver(nodeStart + 4);
                 /* nodeStart is now at OPVer whole length */
                 nodeStart += opverOff;
                 /* the length for the whole opver section */
-                auto opverSz = nodeStart[0];
+                auto opverSz = nodeStart[0] - 1;
                 /* nodeStart is now at first OPVer */
                 nodeStart += 1;
                 nodeSize -= 1;
                 while (opverSz > 0) {
                     /* the whole MRVer include size */
-                    opverSz -= nodeStart[0] + 1;
+                    opverSz -= nodeStart[0];
                     /* parse each MRVer */
                     OPVers.insert(make_pair(index, readMRver(nodeStart + 1)));
                     /* adjust size according to PHI node */
-                    nodeSize -= nodeStart[0] + 1;
+                    nodeSize -= nodeStart[0];
                     // outs() << "\tnode read: " << nodeStart[0] + 1 << "\n";
-                    nodeStart += nodeStart[0] + 1;
+                    nodeStart += nodeStart[0];
                 }
                 addIntraMSSAPHISVFGNode(pag->getICFG()->getICFGNode(icfgNodeId), OPVers.begin(), OPVers.end(), mrver, vfgId);
                 /* In order to conform to default increment of nodeStart,
@@ -426,8 +425,8 @@ void SVFG::readBinaryFile(const string &filename)
         if (totalVFGNode < vfgId)
             totalVFGNode = vfgId + 1;
         
-        nodeStart += sz + 1;
-        nodeSize -= sz + 1;
+        nodeStart += sz;
+        nodeSize -= sz;
         // outs() << "\tnode read: " << sz + 1 << "\n";
     }
     stat->ATVFNodeEnd();
@@ -452,7 +451,7 @@ void SVFG::readBinaryFile(const string &filename)
         case VFGNode::FPOUT:
         {
             const auto &formalOut = SVFUtil::cast<FormalOUTSVFGNode>(getSVFGNode(src));
-            if (edgeStart[0] == 4) {
+            if (edgeStart[0] == 5) {
                 /* intra */
                 addIntraIndirectVFEdge(dst, src, formalOut->getMRVer()->getMR()->getPointsTo());
             } else {
@@ -490,8 +489,8 @@ void SVFG::readBinaryFile(const string &filename)
             assert(false);
             break;
         }
-        edgeSize -= edgeStart[0] + 1;
-        edgeStart += edgeStart[0] + 1;
+        edgeSize -= edgeStart[0];
+        edgeStart += edgeStart[0];
     }
     stat->indVFEdgeEnd();
     connectFromGlobalToProgEntry();
