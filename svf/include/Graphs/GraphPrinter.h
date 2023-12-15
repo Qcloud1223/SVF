@@ -72,6 +72,32 @@ public:
         outFile.close();
     }
 
+    /*! 
+     *  Write the graph starting from a head node for debugging purpose
+     */
+    template<class GraphType, class GraphNodeType>
+    static void WriteGraphToFile(SVF::OutStream &O,
+                                 const std::string &GraphName, 
+                                 const GraphType &GT,
+                                 NodeID head,
+                                 const Set<GraphNodeType> &set,
+                                 bool simple = false)
+    {
+        std::string Filename = GraphName + "_" + std::to_string(head) + ".dot";
+        std::ofstream outFile(Filename);
+        if (outFile.fail())
+        {
+            O << "  error opening file for writing!\n";
+            outFile.close();
+            return;
+        }
+
+        O << "Writing '" << Filename << "'...";
+
+        WriteGraph(outFile, GT, set, simple);
+        outFile.close();
+    }
+
     /*!
      * Print the graph to command line
      */

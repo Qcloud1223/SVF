@@ -37,6 +37,7 @@
 #include "MemoryModel/PointerAnalysisImpl.h"
 #include <fstream>
 #include "Util/Options.h"
+#include "SVFIR/SVFType.h"
 
 using namespace SVF;
 using namespace SVFUtil;
@@ -582,6 +583,32 @@ SVFGEdge* SVFG::addInterIndirectVFRetEdge(const FormalOUTSVFGNode* src, const Ac
 void SVFG::dump(const std::string& file, bool simple)
 {
     GraphPrinter::WriteGraphToFile(outs(), file, this, simple);
+}
+
+/** 
+ * Dump SVFG starting from a head node
+ */
+void SVFG::dump(const std::string &file, NodeID head, bool simple)
+{
+    const SVFGNode *headNode = getSVFGNode(head);
+    FIFOWorkList<const SVFGNode *> worklist;
+    Set<SVFGNode *> visited;
+    worklist.push(headNode);
+    visited.insert(const_cast<SVFGNode *>(headNode));
+
+    while (!worklist.empty()) {
+        const SVFGNode *node = worklist.pop();
+        for (auto it = node->OutEdgeBegin(), eit = node->OutEdgeEnd();
+                it != eit; it++) {
+            auto *edge = *it;
+            auto *succNode = edge->getDstNode();
+            if (visited.find(succNode) == visited.end()) {
+                visited.insert(succNode);
+                worklist.push(succNode);
+            }
+        }
+    }
+    GraphPrinter::WriteGraphToFile(outs(), file, this, head, visited, simple);
 }
 
 /**

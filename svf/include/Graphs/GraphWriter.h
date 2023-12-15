@@ -24,6 +24,7 @@
 
 #include "Graphs/GraphTraits.h"
 #include "Graphs/DOTGraphTraits.h"
+#include "SVFIR/SVFType.h"
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
@@ -335,6 +336,23 @@ std::ofstream &WriteGraph(std::ofstream &O, const GraphType &G,
     W.writeGraph("");
 
     return O;
+}
+
+template<typename GraphType, typename GraphNodeType>
+void WriteGraph(std::ofstream &O, const GraphType &G,
+                          const Set<GraphNodeType> &set,
+                          bool ShortNames = false)
+{
+    GraphWriter<GraphType> W(O, G, ShortNames);
+
+    /* do not bother to write implementation into class definition */
+    W.writeHeader("");
+
+    for (const auto node : set) {
+        W.writeNode(node);
+    }
+
+    W.writeFooter();
 }
 
 /// Writes graph into a provided @c Filename.

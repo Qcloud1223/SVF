@@ -163,6 +163,9 @@ public:
     /// Dump graph into dot file
     void dump(const std::string& file, bool simple = false);
 
+    /// Dump graph starting from a root node, for debugging very large graph
+    void dump(const std::string &file, NodeID head, bool simple = false);
+
     /// Connect SVFG nodes between caller and callee for indirect call site
     virtual void connectCallerAndCallee(const CallICFGNode* cs, const SVFFunction* callee, SVFGEdgeSetTy& edges);
 
