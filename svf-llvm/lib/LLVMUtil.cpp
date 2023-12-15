@@ -689,20 +689,24 @@ const std::string LLVMUtil::getSourceLoc(const Value* val )
         else if (MDNode *N = inst->getMetadata("dbg"))   // Here I is an LLVM instruction
         {
             llvm::DILocation* Loc = SVFUtil::cast<llvm::DILocation>(N);                   // DILocation is in DebugInfo.h
+            /* if inlinedAt is not null, recursively find until no inline */
+            while (Loc->getInlinedAt() != nullptr) {
+                Loc = Loc->getInlinedAt();
+            }
             unsigned Line = Loc->getLine();
             unsigned Column = Loc->getColumn();
             std::string File = Loc->getFilename().str();
             //StringRef Dir = Loc.getDirectory();
-            if(File.empty() || Line == 0)
-            {
-                auto inlineLoc = Loc->getInlinedAt();
-                if(inlineLoc)
-                {
-                    Line = inlineLoc->getLine();
-                    Column = inlineLoc->getColumn();
-                    File = inlineLoc->getFilename().str();
-                }
-            }
+            // if(File.empty() || Line == 0)
+            // {
+            //     auto inlineLoc = Loc->getInlinedAt();
+            //     if(inlineLoc)
+            //     {
+            //         Line = inlineLoc->getLine();
+            //         Column = inlineLoc->getColumn();
+            //         File = inlineLoc->getFilename().str();
+            //     }
+            // }
             rawstr << "\"ln\": " << Line << ", \"cl\": " << Column << ", \"fl\": \"" << File << "\"";
         }
     }
