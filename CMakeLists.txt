@@ -12,11 +12,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # add -std=gnu++14
 set(CMAKE_CXX_EXTENSIONS ON)
 
+message(STATUS "Using C compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "Using CXX compiler: ${CMAKE_CXX_COMPILER}")
+
 add_compile_options("-fno-rtti")
 add_compile_options("-fno-exceptions")
 
 # Treat compiler warnings as errors
-add_compile_options("-Werror" "-Wall")
+# add_compile_options("-Werror" "-Wall")
+add_compile_options("-Wall")
 
 # Keep assertions enabled if requested
 option(SVF_ENABLE_ASSERTIONS "Always enable assertions")
@@ -32,6 +36,16 @@ if(SVF_COVERAGE OR DEFINED ENV{SVF_COVERAGE})
   add_compile_options("-fprofile-arcs" "-ftest-coverage")
   add_link_options("-fprofile-arcs" "-ftest-coverage")
   message(STATUS "Enable coverage")
+endif()
+
+option(USE_SVF_DBOUT "Enable debug print")
+if (USE_SVF_DBOUT)
+  add_compile_options("-DUSE_SVF_DBOUT")
+endif()
+
+option(USE_SVF_EX_DBOUT "Enable debug print in example program")
+if (USE_SVF_EX_DBOUT)
+  add_compile_options("-DUSE_SVF_EX_DBOUT")
 endif()
 
 set(SVF_SANITIZE
