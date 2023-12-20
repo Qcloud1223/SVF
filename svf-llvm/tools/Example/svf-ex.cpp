@@ -210,7 +210,7 @@ void singleLayerVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited)
             /* Loading from a struct/array, and thus GEP */
             if (const GepVFGNode *gep_def = SVFUtil::dyn_cast<GepVFGNode>(def)) {
                 const GepStmt *gs = SVFUtil::dyn_cast<GepStmt>(gep_def->getPAGEdge());
-                SVFUtil::outs() << ", Index: " << gs->getConstantFieldIdx() << "\n";
+                SVFUtil::outs() << ", Index: " << gs->getConstantStructFldIdx() << "\n";
             } 
             /* Loading directly from a global variable, easy */
             else if (const AddrVFGNode *addr_def = SVFUtil::dyn_cast<AddrVFGNode>(def)) {
@@ -242,7 +242,7 @@ void singleLayerVFGCallback(const SVFG *vfg, Set<const VFGNode *> &visited)
             /* Storing to struct/array */
             if (const GepVFGNode *gep_def = SVFUtil::dyn_cast<GepVFGNode>(def)) {
                 const GepStmt *gs = SVFUtil::dyn_cast<GepStmt>(gep_def->getPAGEdge());
-                SVFUtil::outs() << ", Index: " << gs->getConstantFieldIdx() << "\n";
+                SVFUtil::outs() << ", Index: " << gs->getConstantStructFldIdx() << "\n";
             }
             /* Direct store */
             else if (const AddrVFGNode *addr_def = SVFUtil::dyn_cast<AddrVFGNode>(def)) {
