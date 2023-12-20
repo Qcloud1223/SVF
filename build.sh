@@ -4,9 +4,9 @@
 # if the LLVM_DIR variable is not set, LLVM will be downloaded.
 #
 # Dependencies include: build-essential libncurses5 libncurses-dev cmake zlib1g-dev
-set -e # exit on first error
+# set -e # exit on first error
 
-jobs=4
+jobs=48
 
 #########
 # VARs and Links
@@ -29,6 +29,10 @@ SourceZ3="https://github.com/Z3Prover/z3/archive/refs/tags/z3-4.8.8.zip"
 LLVMHome="llvm-14.0.0.obj"
 Z3Home="z3.obj"
 
+LLVM_SRC=/home/iom/llvm-collections/llvm-project-14.0.0.src
+LLVM_OBJ=/home/iom/llvm-collections/llvm-project-14.0.0.src/install
+LLVM_DIR=/home/iom/llvm-collections/llvm-project-14.0.0.src/install
+PATH=$LLVM_DIR/bin:$PATH
 
 # Downloads $1 (URL) to $2 (target destination) using wget or curl,
 # depending on OS.
@@ -226,6 +230,8 @@ cmake -D CMAKE_BUILD_TYPE:STRING="${BUILD_TYPE}" \
     -DSVF_ENABLE_ASSERTIONS:BOOL=true            \
     -DSVF_SANITIZE="${SVF_SANITIZER}"            \
     -DBUILD_SHARED_LIBS=off                      \
+    -DUSE_SVF_DBOUT=off                           \
+    -DUSE_SVF_EX_DBOUT=off                          \
     -S "${SVFHOME}" -B "${BUILD_DIR}"
 cmake --build "${BUILD_DIR}" -j ${jobs}
 
